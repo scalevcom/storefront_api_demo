@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "storefront-api-demo",
+  "compatibility_date": "2026-05-08",
+  "pages_build_output_dir": "dist",
+  "vars": {
+    "SCALEV_API_BASE": "https://api.scalev.com",
+    "SCALEV_STORE_UNIQUE_ID": "store_vlzpML8edzxO5roOdV7Oyfn6"
+  }
+}
