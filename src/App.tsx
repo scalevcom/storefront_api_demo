@@ -108,6 +108,9 @@ export default function App() {
   const [resetPassword, setResetPassword] = useState("");
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
   const [customerToken, setCustomerToken] = useState(() => localStorage.getItem("scalev_customer_token") || "");
+  const [customerRefreshToken, setCustomerRefreshToken] = useState(
+    () => localStorage.getItem("scalev_customer_refresh_token") || ""
+  );
   const [customerOutput, setCustomerOutput] = useState("");
 
   const selectedProduct = useMemo(
@@ -790,7 +793,12 @@ export default function App() {
 
     const token = result.data ? findToken(result.data) : null;
     if (token) {
+      const refreshToken = result.data ? findRefreshToken(result.data) : null;
       setCustomerToken(token);
+      if (refreshToken) {
+        setCustomerRefreshToken(refreshToken);
+        localStorage.setItem("scalev_customer_refresh_token", refreshToken);
+      }
       setOtpRequested(false);
       setAccountMode("login");
       localStorage.setItem("scalev_customer_token", token);
@@ -832,14 +840,15 @@ export default function App() {
   }
 
   async function refreshCustomerJwt() {
-    if (!customerToken) {
+    if (!customerRefreshToken) {
       addLog("JWT refresh", "warn", "Refresh requires the current customer session.");
+      setCustomerOutput("Sign in again to refresh this customer session.");
       return;
     }
     setBusyAction("jwt-refresh");
     const result = await scalevRequest<Record<string, unknown>>("public/auth/jwt/refresh", {
       method: "POST",
-      body: { token: customerToken }
+      body: { refresh: customerRefreshToken }
     });
     handleAuthResponse("Session refresh", result);
     setBusyAction(null);
@@ -853,7 +862,7 @@ export default function App() {
     setBusyAction("jwt-blacklist");
     const result = await scalevRequest<Record<string, unknown>>("public/auth/jwt/blacklist", {
       method: "POST",
-      body: { token: customerToken }
+      body: { tokens: [customerToken, customerRefreshToken].filter(Boolean) }
     });
     addLog(
       "Customer logout",
@@ -866,9 +875,11 @@ export default function App() {
 
   function clearCustomerSession() {
     setCustomerToken("");
+    setCustomerRefreshToken("");
     setOtpRequested(false);
     setCustomerOutput("You have been signed out.");
     localStorage.removeItem("scalev_customer_token");
+    localStorage.removeItem("scalev_customer_refresh_token");
     addLog("Customer session", "warn", "Local session cleared.");
   }
 
@@ -1834,19 +1845,25 @@ function paymentMethodDescription(method: PaymentMethod): string {
   return "Available for this store.";
 }
 
-function findToken(data: Record<string, unknown>): string | null {
-  const candidates = ["access_token", "token", "jwt"];
+function findToken(
+  data: Record<string, unknown>,
+  candidates = ["access", "access_token", "accessToken", "customer_access_token", "token", "jwt"]
+): string | null {
   for (const key of candidates) {
     const value = data[key];
     if (typeof value === "string") return value;
   }
   for (const value of Object.values(data)) {
     if (value && typeof value === "object") {
-      const nested = findToken(value as Record<string, unknown>);
+      const nested = findToken(value as Record<string, unknown>, candidates);
       if (nested) return nested;
     }
   }
   return null;
+}
+
+function findRefreshToken(data: Record<string, unknown>): string | null {
+  return findToken(data, ["refresh", "refresh_token", "refreshToken", "customer_refresh_token"]);
 }
 
 function findSecretSlug(data: Record<string, unknown>): string | null {
