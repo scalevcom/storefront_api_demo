@@ -22,17 +22,16 @@ Local development needs a Vite environment variable:
 VITE_SCALEV_API_BASE=https://api.scalev.com
 VITE_SCALEV_STORE_UNIQUE_ID=store_vlzpML8edzxO5roOdV7Oyfn6
 VITE_SCALEV_STOREFRONT_API_KEY=<publishable storefront key>
-SCALEV_BUSINESS_STORE_ID=3288
 ```
 
 ## Live Smoke Tests
 
 ```bash
-set -a; source .envrc; set +a
+set -a; source .dev.vars; set +a
 npm run live:smoke
 ```
 
-The storefront runtime calls Scalev directly from the browser with `VITE_SCALEV_STORE_UNIQUE_ID` and `VITE_SCALEV_STOREFRONT_API_KEY`. The smoke script can use `SCALEV_BUSINESS_STORE_ID` only to discover the existing publishable storefront key when `SCALEV_STOREFRONT_API_KEY` is missing or stale.
+The storefront runtime calls Scalev directly from the browser with `VITE_SCALEV_STORE_UNIQUE_ID` and `VITE_SCALEV_STOREFRONT_API_KEY`. The smoke script uses the same publishable storefront key and only calls Storefront API endpoints.
 
 ## Deployment
 

@@ -1,25 +1,13 @@
 #!/usr/bin/env node
 const API_BASE = process.env.SCALEV_API_BASE || "https://api.scalev.com";
 const STORE_ID = process.env.SCALEV_STORE_UNIQUE_ID || "store_vlzpML8edzxO5roOdV7Oyfn6";
-const BUSINESS_STORE_ID = process.env.SCALEV_BUSINESS_STORE_ID || "3288";
-const BUSINESS_API_KEY = process.env.SCALEV_API_KEY;
 const DEMO_ORIGIN = "https://demo.scalev.shop";
-let storefrontKey = process.env.SCALEV_STOREFRONT_API_KEY || process.env.VITE_SCALEV_STOREFRONT_API_KEY;
+const storefrontKey = process.env.SCALEV_STOREFRONT_API_KEY || process.env.VITE_SCALEV_STOREFRONT_API_KEY;
 
 const results = [];
 
-if (BUSINESS_API_KEY) {
-  const keys = await fetchJson(`${API_BASE}/v3/stores/${BUSINESS_STORE_ID}/public-api-keys`, {
-    headers: {
-      Authorization: `Bearer ${BUSINESS_API_KEY}`,
-      Accept: "application/json"
-    }
-  });
-  storefrontKey = keys.body?.data?.find((key) => key.status === "active" && key.token)?.token || storefrontKey;
-}
-
 if (!storefrontKey) {
-  throw new Error("Set SCALEV_STOREFRONT_API_KEY, VITE_SCALEV_STOREFRONT_API_KEY, or SCALEV_API_KEY before running live smoke tests.");
+  throw new Error("Set SCALEV_STOREFRONT_API_KEY or VITE_SCALEV_STOREFRONT_API_KEY before running live smoke tests.");
 }
 
 await probe("CORS preflight", async () =>
@@ -251,15 +239,6 @@ async function probe(name, fn) {
   };
   results.push(result);
   return result;
-}
-
-async function fetchJson(url, init) {
-  const response = await fetch(url, init);
-  const text = await response.text();
-  return {
-    response,
-    body: text ? JSON.parse(text) : null
-  };
 }
 
 function extractGuestToken(response) {
