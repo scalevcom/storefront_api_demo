@@ -45,8 +45,27 @@ await probe("Product count", async () =>
   })
 );
 
-await probe("Product list", async () =>
+const productList = await probe("Product list", async () =>
   fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products?page_size=5`, {
+    headers: publicHeaders()
+  })
+);
+
+if (productList.body?.next_cursor) {
+  await probe("Product list next cursor", async () =>
+    fetch(
+      `${API_BASE}/v3/stores/${STORE_ID}/public/products?next_cursor=${encodeURIComponent(
+        productList.body.next_cursor
+      )}&page_size=5`,
+      {
+        headers: publicHeaders()
+      }
+    )
+  );
+}
+
+await probe("Product list page size 12", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products?page_size=12`, {
     headers: publicHeaders()
   })
 );
