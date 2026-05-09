@@ -107,7 +107,7 @@ await probe("Public location postal codes", async () =>
 );
 
 await probe("Customer login preflight", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/auth/otp/send`, {
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/auth/login`, {
     method: "OPTIONS",
     headers: {
       Origin: DEMO_ORIGIN,

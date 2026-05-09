@@ -680,7 +680,7 @@ export default function App() {
       return;
     }
     setBusyAction("otp");
-    const result = await scalevRequest<Record<string, unknown>>("public/auth/otp/send", {
+    const result = await scalevRequest<Record<string, unknown>>("public/auth/login", {
       method: "POST",
       body: {
         email: customerEmail,
