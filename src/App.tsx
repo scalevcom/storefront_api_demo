@@ -106,6 +106,7 @@ export default function App() {
   );
   const [resetToken, setResetToken] = useState(initialResetToken);
   const [resetPassword, setResetPassword] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
   const [customerToken, setCustomerToken] = useState(() => localStorage.getItem("scalev_customer_token") || "");
   const [customerOutput, setCustomerOutput] = useState("");
 
@@ -712,6 +713,8 @@ export default function App() {
       return;
     }
     setBusyAction("forget-password");
+    setResetPassword("");
+    setResetPasswordConfirm("");
     const result = await scalevRequest<Record<string, unknown>>("public/auth/forget-password", {
       method: "POST",
       body: {
@@ -735,8 +738,16 @@ export default function App() {
   }
 
   async function savePasswordReset() {
-    if (!resetToken || !resetPassword) {
-      setCustomerOutput("Enter the reset token and new password first.");
+    if (!resetToken) {
+      setCustomerOutput("Open the reset link from your email first.");
+      return;
+    }
+    if (!resetPassword || !resetPasswordConfirm) {
+      setCustomerOutput("Enter and confirm your new password.");
+      return;
+    }
+    if (resetPassword !== resetPasswordConfirm) {
+      setCustomerOutput("Passwords do not match.");
       return;
     }
     setBusyAction("save-password");
@@ -750,11 +761,13 @@ export default function App() {
     if (result.ok) {
       setCustomerPassword(resetPassword);
       setResetPassword("");
+      setResetPasswordConfirm("");
       setResetToken("");
       setOtpRequested(false);
       setAccountMode("login");
       setCustomerOutput("Password saved. Sign in with your new password.");
       addLog("Save password", "ok", "Customer password reset completed.");
+      clearResetTokenFromUrl();
     } else {
       setCustomerOutput("We could not save the new password. Check the reset token and try again.");
       addLog(
@@ -1075,6 +1088,7 @@ export default function App() {
         busyAction={busyAction}
         otpRequested={otpRequested}
         resetPassword={resetPassword}
+        resetPasswordConfirm={resetPasswordConfirm}
         resetToken={resetToken}
         onCallCustomerEndpoint={callCustomerEndpoint}
         onClose={() => setAccountOpen(false)}
@@ -1096,8 +1110,8 @@ export default function App() {
         }}
         onRefresh={refreshCustomerJwt}
         onRequestPasswordReset={requestPasswordReset}
+        onResetPasswordConfirmChange={setResetPasswordConfirm}
         onResetPasswordChange={setResetPassword}
-        onResetTokenChange={setResetToken}
         onSavePasswordReset={savePasswordReset}
         onStartCustomerLogin={startCustomerLogin}
         onVerifyOtp={verifyOtp}
@@ -1571,6 +1585,7 @@ interface AccountDrawerProps {
   customerToken: string;
   otpRequested: boolean;
   resetPassword: string;
+  resetPasswordConfirm: string;
   resetToken: string;
   onCallCustomerEndpoint: (label: string, path: string) => void | Promise<void>;
   onClose: () => void;
@@ -1581,8 +1596,8 @@ interface AccountDrawerProps {
   onPasswordChange: (value: string) => void;
   onRefresh: () => void | Promise<void>;
   onRequestPasswordReset: () => void | Promise<void>;
+  onResetPasswordConfirmChange: (value: string) => void;
   onResetPasswordChange: (value: string) => void;
-  onResetTokenChange: (value: string) => void;
   onSavePasswordReset: () => void | Promise<void>;
   onStartCustomerLogin: () => void | Promise<void>;
   onVerifyOtp: () => void | Promise<void>;
@@ -1599,6 +1614,7 @@ function AccountDrawer({
   customerToken,
   otpRequested,
   resetPassword,
+  resetPasswordConfirm,
   resetToken,
   onCallCustomerEndpoint,
   onClose,
@@ -1609,8 +1625,8 @@ function AccountDrawer({
   onPasswordChange,
   onRefresh,
   onRequestPasswordReset,
+  onResetPasswordConfirmChange,
   onResetPasswordChange,
-  onResetTokenChange,
   onSavePasswordReset,
   onStartCustomerLogin,
   onVerifyOtp,
@@ -1714,38 +1730,57 @@ function AccountDrawer({
           </>
         ) : (
           <>
-            <div className="form-grid">
-              <label>
-                <span>Email</span>
-                <input value={customerEmail} onChange={(event) => onEmailChange(event.target.value)} />
-              </label>
-              <label>
-                <span>Reset token</span>
-                <input value={resetToken} onChange={(event) => onResetTokenChange(event.target.value)} />
-              </label>
-              <label>
-                <span>New password</span>
-                <input
-                  type="password"
-                  value={resetPassword}
-                  onChange={(event) => onResetPasswordChange(event.target.value)}
-                />
-              </label>
-            </div>
-            <div className="account-actions">
-              <button
-                className="checkout-button"
-                onClick={() => void onRequestPasswordReset()}
-                disabled={busyAction === "forget-password"}
-              >
-                {busyAction === "forget-password" ? <Loader2 size={18} className="spin" /> : <Mail size={18} />}
-                Send reset email
-              </button>
-              <button onClick={() => void onSavePasswordReset()} disabled={busyAction === "save-password"}>
-                {busyAction === "save-password" ? <Loader2 size={17} className="spin" /> : <KeyRound size={17} />}
-                Save password
-              </button>
-            </div>
+            {resetToken ? (
+              <>
+                <div className="form-grid">
+                  <label>
+                    <span>New password</span>
+                    <input
+                      type="password"
+                      value={resetPassword}
+                      onChange={(event) => onResetPasswordChange(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Confirm password</span>
+                    <input
+                      type="password"
+                      value={resetPasswordConfirm}
+                      onChange={(event) => onResetPasswordConfirmChange(event.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="account-actions">
+                  <button
+                    className="checkout-button"
+                    onClick={() => void onSavePasswordReset()}
+                    disabled={busyAction === "save-password"}
+                  >
+                    {busyAction === "save-password" ? <Loader2 size={17} className="spin" /> : <KeyRound size={17} />}
+                    Save password
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="form-grid">
+                  <label>
+                    <span>Email</span>
+                    <input value={customerEmail} onChange={(event) => onEmailChange(event.target.value)} />
+                  </label>
+                </div>
+                <div className="account-actions">
+                  <button
+                    className="checkout-button"
+                    onClick={() => void onRequestPasswordReset()}
+                    disabled={busyAction === "forget-password"}
+                  >
+                    {busyAction === "forget-password" ? <Loader2 size={18} className="spin" /> : <Mail size={18} />}
+                    Send reset email
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
         {customerOutput ? <p className="account-note">{customerOutput}</p> : null}
@@ -1846,12 +1881,54 @@ function findPaymentUrl(data: Record<string, unknown>): string | null {
 
 function initialResetToken(): string {
   if (typeof window === "undefined") return "";
-  const params = new URLSearchParams(window.location.search);
-  return (
-    params.get("token") ||
-    params.get("reset_token") ||
-    params.get("password_reset_token") ||
-    params.get("customer_reset_token") ||
-    ""
-  );
+  return findResetToken(new URLSearchParams(window.location.search)) || findResetToken(hashParams()) || "";
 }
+
+function clearResetTokenFromUrl() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  for (const key of resetTokenParamNames) {
+    url.searchParams.delete(key);
+  }
+  const cleanedHash = cleanHashResetToken(url.hash);
+  if (cleanedHash !== url.hash) {
+    url.hash = cleanedHash;
+  }
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState(window.history.state, "", nextUrl);
+}
+
+function findResetToken(params: URLSearchParams): string {
+  for (const key of resetTokenParamNames) {
+    const token = params.get(key);
+    if (token) return token;
+  }
+  return "";
+}
+
+function hashParams(): URLSearchParams {
+  if (typeof window === "undefined") return new URLSearchParams();
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const queryStart = hash.indexOf("?");
+  return new URLSearchParams(queryStart >= 0 ? hash.slice(queryStart + 1) : hash);
+}
+
+function cleanHashResetToken(hash: string): string {
+  if (!hash) return hash;
+  const rawHash = hash.slice(1);
+  const queryStart = rawHash.indexOf("?");
+  const hashPath = queryStart >= 0 ? rawHash.slice(0, queryStart) : "";
+  const hashQuery = queryStart >= 0 ? rawHash.slice(queryStart + 1) : rawHash;
+  const params = new URLSearchParams(hashQuery);
+  let hadResetToken = false;
+  for (const key of resetTokenParamNames) {
+    if (params.has(key)) hadResetToken = true;
+    params.delete(key);
+  }
+  if (!hadResetToken) return hash;
+  const nextQuery = params.toString();
+  if (hashPath) return nextQuery ? `#${hashPath}?${nextQuery}` : `#${hashPath}`;
+  return nextQuery ? `#?${nextQuery}` : "";
+}
+
+const resetTokenParamNames = ["token", "reset_token", "password_reset_token", "customer_reset_token"];
