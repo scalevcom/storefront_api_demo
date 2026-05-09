@@ -99,6 +99,41 @@ await probe("Public location postal codes", async () =>
   })
 );
 
+await probe("Customer login preflight", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/auth/otp/send`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: DEMO_ORIGIN,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "x-scalev-storefront-api-key,content-type"
+    }
+  })
+);
+
+await probe("Password reset preflight", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/auth/forget-password`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: DEMO_ORIGIN,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "x-scalev-storefront-api-key,content-type"
+    }
+  })
+);
+
+await probe("Save password invalid token", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/auth/save-password`, {
+    method: "POST",
+    headers: publicHeaders({
+      "Content-Type": "application/json"
+    }),
+    body: JSON.stringify({
+      token: "not-a-real-reset-token",
+      password: "not-a-real-password"
+    })
+  })
+);
+
 let guestToken = "";
 await probe("Guest cart", async () => {
   const response = await fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/cart`, {

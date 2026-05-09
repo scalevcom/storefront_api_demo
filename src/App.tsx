@@ -1,8 +1,10 @@
 import {
   CreditCard,
   Heart,
+  KeyRound,
   Loader2,
   LogIn,
+  Mail,
   Menu,
   Minus,
   PackageCheck,
@@ -57,6 +59,7 @@ const FALLBACK_PAYMENT_METHODS: PaymentMethod[] = [
 ];
 
 type LocationMode = "guided" | "search";
+type AccountMode = "login" | "reset";
 
 export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -97,6 +100,11 @@ export default function App() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPassword, setCustomerPassword] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const [accountMode, setAccountMode] = useState<AccountMode>(() =>
+    initialResetToken() ? "reset" : "login"
+  );
+  const [resetToken, setResetToken] = useState(initialResetToken);
+  const [resetPassword, setResetPassword] = useState("");
   const [customerToken, setCustomerToken] = useState(() => localStorage.getItem("scalev_customer_token") || "");
   const [customerOutput, setCustomerOutput] = useState("");
 
@@ -152,6 +160,14 @@ export default function App() {
   useEffect(() => {
     void loadStorefront();
   }, []);
+
+  useEffect(() => {
+    if (resetToken) {
+      setAccountMode("reset");
+      setAccountOpen(true);
+      setCustomerOutput("Set a new password to continue.");
+    }
+  }, [resetToken]);
 
   useEffect(() => {
     void loadProvinceCities(province);
@@ -654,6 +670,10 @@ export default function App() {
   }
 
   async function sendOtp() {
+    if (!customerEmail || !customerPassword) {
+      setCustomerOutput("Enter your email and password first.");
+      return;
+    }
     setBusyAction("otp");
     const result = await scalevRequest<Record<string, unknown>>("public/auth/otp/send", {
       method: "POST",
@@ -668,6 +688,10 @@ export default function App() {
   }
 
   async function verifyOtp() {
+    if (!customerEmail || !otpCode) {
+      setCustomerOutput("Enter your email and one-time code first.");
+      return;
+    }
     setBusyAction("otp-verify");
     const result = await scalevRequest<Record<string, unknown>>("public/auth/otp/verify", {
       method: "POST",
@@ -678,6 +702,67 @@ export default function App() {
       }
     });
     handleAuthResponse("OTP verify", result);
+    setBusyAction(null);
+  }
+
+  async function requestPasswordReset() {
+    if (!customerEmail) {
+      setCustomerOutput("Enter your email first.");
+      return;
+    }
+    setBusyAction("forget-password");
+    const result = await scalevRequest<Record<string, unknown>>("public/auth/forget-password", {
+      method: "POST",
+      body: {
+        email: customerEmail
+      }
+    });
+    if (result.ok) {
+      setCustomerOutput("If this email belongs to a customer account, a reset email is on the way.");
+      addLog("Password reset", "ok", "Reset email request accepted.");
+    } else {
+      setCustomerOutput("We could not request a password reset right now.");
+      addLog(
+        "Password reset",
+        "error",
+        `${result.status}: ${result.error || "Reset request failed"}${
+          result.requestId ? ` (request ${result.requestId})` : ""
+        }`
+      );
+    }
+    setBusyAction(null);
+  }
+
+  async function savePasswordReset() {
+    if (!resetToken || !resetPassword) {
+      setCustomerOutput("Enter the reset token and new password first.");
+      return;
+    }
+    setBusyAction("save-password");
+    const result = await scalevRequest<Record<string, unknown>>("public/auth/save-password", {
+      method: "POST",
+      body: {
+        token: resetToken,
+        password: resetPassword
+      }
+    });
+    if (result.ok) {
+      setCustomerPassword(resetPassword);
+      setResetPassword("");
+      setResetToken("");
+      setAccountMode("login");
+      setCustomerOutput("Password saved. Sign in with your new password.");
+      addLog("Save password", "ok", "Customer password reset completed.");
+    } else {
+      setCustomerOutput("We could not save the new password. Check the reset token and try again.");
+      addLog(
+        "Save password",
+        "error",
+        `${result.status}: ${result.error || "Save password failed"}${
+          result.requestId ? ` (request ${result.requestId})` : ""
+        }`
+      );
+    }
     setBusyAction(null);
   }
 
@@ -964,18 +1049,26 @@ export default function App() {
       />
 
       <AccountDrawer
+        accountMode={accountMode}
         customerEmail={customerEmail}
         customerOutput={customerOutput}
         customerPassword={customerPassword}
         customerToken={customerToken}
         busyAction={busyAction}
+        resetPassword={resetPassword}
+        resetToken={resetToken}
         onCallCustomerEndpoint={callCustomerEndpoint}
         onClose={() => setAccountOpen(false)}
         onEmailChange={setCustomerEmail}
         onLogout={logoutCustomerJwt}
+        onModeChange={setAccountMode}
         onOtpChange={setOtpCode}
         onPasswordChange={setCustomerPassword}
         onRefresh={refreshCustomerJwt}
+        onRequestPasswordReset={requestPasswordReset}
+        onResetPasswordChange={setResetPassword}
+        onResetTokenChange={setResetToken}
+        onSavePasswordReset={savePasswordReset}
         onSendOtp={sendOtp}
         onVerifyOtp={verifyOtp}
         open={accountOpen}
@@ -1440,18 +1533,26 @@ function QuickView({
 }
 
 interface AccountDrawerProps {
+  accountMode: AccountMode;
   busyAction: string | null;
   customerEmail: string;
   customerOutput: string;
   customerPassword: string;
   customerToken: string;
+  resetPassword: string;
+  resetToken: string;
   onCallCustomerEndpoint: (label: string, path: string) => void | Promise<void>;
   onClose: () => void;
   onEmailChange: (value: string) => void;
   onLogout: () => void | Promise<void>;
+  onModeChange: (value: AccountMode) => void;
   onOtpChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onRefresh: () => void | Promise<void>;
+  onRequestPasswordReset: () => void | Promise<void>;
+  onResetPasswordChange: (value: string) => void;
+  onResetTokenChange: (value: string) => void;
+  onSavePasswordReset: () => void | Promise<void>;
   onSendOtp: () => void | Promise<void>;
   onVerifyOtp: () => void | Promise<void>;
   open: boolean;
@@ -1459,18 +1560,26 @@ interface AccountDrawerProps {
 }
 
 function AccountDrawer({
+  accountMode,
   busyAction,
   customerEmail,
   customerOutput,
   customerPassword,
   customerToken,
+  resetPassword,
+  resetToken,
   onCallCustomerEndpoint,
   onClose,
   onEmailChange,
   onLogout,
+  onModeChange,
   onOtpChange,
   onPasswordChange,
   onRefresh,
+  onRequestPasswordReset,
+  onResetPasswordChange,
+  onResetTokenChange,
+  onSavePasswordReset,
   onSendOtp,
   onVerifyOtp,
   open,
@@ -1482,46 +1591,108 @@ function AccountDrawer({
         <div className="drawer-head">
           <div>
             <p className="store-kicker">Account</p>
-            <h2>{customerToken ? "Welcome back" : "Sign in"}</h2>
+            <h2>{customerToken ? "Welcome back" : accountMode === "login" ? "Sign in" : "Reset password"}</h2>
           </div>
           <button className="close-button" onClick={onClose} aria-label="Close account">
             <X size={22} />
           </button>
         </div>
-        <div className="form-grid">
-          <label>
-            <span>Email</span>
-            <input value={customerEmail} onChange={(event) => onEmailChange(event.target.value)} />
-          </label>
-          <label>
-            <span>Password</span>
-            <input
-              type="password"
-              value={customerPassword}
-              onChange={(event) => onPasswordChange(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>One-time code</span>
-            <input value={otpCode} onChange={(event) => onOtpChange(event.target.value)} />
-          </label>
-        </div>
-        <div className="account-actions">
-          <button className="checkout-button" onClick={() => void onSendOtp()} disabled={busyAction === "otp"}>
-            <LogIn size={18} />
+        <div className="mode-switch account-mode-switch" role="tablist" aria-label="Account mode">
+          <button
+            className={accountMode === "login" ? "active" : ""}
+            type="button"
+            onClick={() => onModeChange("login")}
+          >
             Sign in
           </button>
-          <button onClick={() => void onVerifyOtp()}>Verify</button>
-          <button onClick={() => void onCallCustomerEndpoint("Account details", "customers/me")}>Account details</button>
-          <button onClick={() => void onCallCustomerEndpoint("Order history", "customers/me/orders")}>Order history</button>
-          <button onClick={() => void onCallCustomerEndpoint("Memberships", "customers/me/subscriptions")}>
-            Memberships
-          </button>
-          <button onClick={() => void onRefresh()}>Keep me signed in</button>
-          <button className="danger-text" onClick={() => void onLogout()}>
-            Sign out
+          <button
+            className={accountMode === "reset" ? "active" : ""}
+            type="button"
+            onClick={() => onModeChange("reset")}
+          >
+            Reset password
           </button>
         </div>
+        {accountMode === "login" ? (
+          <>
+            <div className="form-grid">
+              <label>
+                <span>Email</span>
+                <input value={customerEmail} onChange={(event) => onEmailChange(event.target.value)} />
+              </label>
+              <label>
+                <span>Password</span>
+                <input
+                  type="password"
+                  value={customerPassword}
+                  onChange={(event) => onPasswordChange(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>One-time code</span>
+                <input value={otpCode} onChange={(event) => onOtpChange(event.target.value)} />
+              </label>
+            </div>
+            <div className="account-actions">
+              <button className="checkout-button" onClick={() => void onSendOtp()} disabled={busyAction === "otp"}>
+                {busyAction === "otp" ? <Loader2 size={18} className="spin" /> : <Mail size={18} />}
+                Send code
+              </button>
+              <button onClick={() => void onVerifyOtp()} disabled={busyAction === "otp-verify"}>
+                <LogIn size={17} />
+                Verify
+              </button>
+              <button onClick={() => void onCallCustomerEndpoint("Account details", "customers/me")}>
+                Account details
+              </button>
+              <button onClick={() => void onCallCustomerEndpoint("Order history", "customers/me/orders")}>
+                Order history
+              </button>
+              <button onClick={() => void onCallCustomerEndpoint("Memberships", "customers/me/subscriptions")}>
+                Memberships
+              </button>
+              <button onClick={() => void onRefresh()}>Keep me signed in</button>
+              <button className="danger-text" onClick={() => void onLogout()}>
+                Sign out
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="form-grid">
+              <label>
+                <span>Email</span>
+                <input value={customerEmail} onChange={(event) => onEmailChange(event.target.value)} />
+              </label>
+              <label>
+                <span>Reset token</span>
+                <input value={resetToken} onChange={(event) => onResetTokenChange(event.target.value)} />
+              </label>
+              <label>
+                <span>New password</span>
+                <input
+                  type="password"
+                  value={resetPassword}
+                  onChange={(event) => onResetPasswordChange(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="account-actions">
+              <button
+                className="checkout-button"
+                onClick={() => void onRequestPasswordReset()}
+                disabled={busyAction === "forget-password"}
+              >
+                {busyAction === "forget-password" ? <Loader2 size={18} className="spin" /> : <Mail size={18} />}
+                Send reset email
+              </button>
+              <button onClick={() => void onSavePasswordReset()} disabled={busyAction === "save-password"}>
+                {busyAction === "save-password" ? <Loader2 size={17} className="spin" /> : <KeyRound size={17} />}
+                Save password
+              </button>
+            </div>
+          </>
+        )}
         {customerOutput ? <p className="account-note">{customerOutput}</p> : null}
       </aside>
     </div>
@@ -1616,4 +1787,16 @@ function findPaymentUrl(data: Record<string, unknown>): string | null {
     }
   }
   return null;
+}
+
+function initialResetToken(): string {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search);
+  return (
+    params.get("token") ||
+    params.get("reset_token") ||
+    params.get("password_reset_token") ||
+    params.get("customer_reset_token") ||
+    ""
+  );
 }
