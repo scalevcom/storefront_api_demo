@@ -1,10 +1,5 @@
-export type ApiMode = "direct" | "proxy";
-
 export interface ApiDiagnostics {
-  mode: ApiMode;
-  directAttempted: boolean;
   directUsable: boolean;
-  proxyUsable: boolean;
   message: string;
 }
 
@@ -14,7 +9,6 @@ export interface ApiResult<T> {
   data?: T;
   error?: string;
   requestId?: string | null;
-  mode: ApiMode;
 }
 
 export interface CollectionResponse<T> {

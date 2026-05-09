@@ -214,19 +214,19 @@ export default function App() {
     setShopNotice("");
 
     const probe = await probeScalev();
-    addLog("Connectivity", probe.mode === "proxy" ? "warn" : "ok", probe.message);
+    addLog("Connectivity", probe.directUsable ? "ok" : "error", probe.message);
 
-    const [countResult, categoriesResult, listResult, pricingResult, paymentMethodsResult, provincesResult] =
+    const [countResult, categoriesResult, productPages, pricingResult, paymentMethodsResult, provincesResult] =
       await Promise.all([
-      scalevRequest<{ total: number }>("public/products/count"),
-      scalevRequest<CollectionResponse<Category>>("public/categories"),
-      scalevRequest<CollectionResponse<Product>>("public/products?page_size=12"),
-      scalevRequest<CollectionResponse<Record<string, unknown>>>(
-        `public/variants/pricing?ids=${DEMO_VARIANT_IDS.join(",")}`
-      ),
-      scalevRequest<CollectionResponse<PaymentMethod>>("public/payment-methods"),
-      scalevRequest<CollectionResponse<ProvinceOption>>("public/locations/provinces")
-    ]);
+        scalevRequest<{ total: number }>("public/products/count"),
+        scalevRequest<CollectionResponse<Category>>("public/categories"),
+        loadProductPages(12),
+        scalevRequest<CollectionResponse<Record<string, unknown>>>(
+          `public/variants/pricing?ids=${DEMO_VARIANT_IDS.join(",")}`
+        ),
+        scalevRequest<CollectionResponse<PaymentMethod>>("public/payment-methods"),
+        scalevRequest<CollectionResponse<ProvinceOption>>("public/locations/provinces")
+      ]);
 
     if (countResult.ok && countResult.data) {
       setProductCount(Number(countResult.data.total));
@@ -266,12 +266,20 @@ export default function App() {
       addLog("Delivery provinces", "ok", `Loaded ${provincesResult.data.data.length} provinces.`);
     }
 
-    if (listResult.ok && listResult.data?.data?.length) {
-      setProducts(listResult.data.data);
-      addLog("Product list", "ok", "Loaded product grid from GET /public/products.");
+    if (productPages.products.length) {
+      setProducts(productPages.products);
+      addLog(
+        "Product list",
+        productPages.error ? "warn" : "ok",
+        `Loaded ${productPages.products.length} products from ${productPages.pageCount} cursor page${
+          productPages.pageCount === 1 ? "" : "s"
+        }.`
+      );
     } else {
-      const detail = `${listResult.status}: ${listResult.error || "GET /public/products failed"}${
-        listResult.requestId ? ` (request ${listResult.requestId})` : ""
+      const detail = `${productPages.error?.status || 0}: ${
+        productPages.error?.error || "GET /public/products failed"
+      }${
+        productPages.error?.requestId ? ` (request ${productPages.error.requestId})` : ""
       }`;
       addLog("Product list", "error", detail);
       setShopNotice("A few shelves are being refreshed. Showing this week's featured picks.");
@@ -293,6 +301,38 @@ export default function App() {
     return results
       .filter((result): result is ApiResult<Product> & { data: Product } => result.ok && !!result.data)
       .map((result) => result.data);
+  }
+
+  async function loadProductPages(limit: number) {
+    const products = new Map<number, Product>();
+    const pageSize = 5;
+    let endpoint = `public/products?page_size=${pageSize}`;
+    let pageCount = 0;
+    let error: ApiResult<CollectionResponse<Product>> | undefined;
+
+    while (endpoint && products.size < limit && pageCount < 8) {
+      const result = await scalevRequest<CollectionResponse<Product>>(endpoint);
+      if (!result.ok || !result.data?.data) {
+        error = result;
+        break;
+      }
+
+      pageCount += 1;
+      for (const product of result.data.data) {
+        products.set(product.id, product);
+      }
+
+      endpoint =
+        result.data.has_next && result.data.next_cursor
+          ? `public/products?next_cursor=${encodeURIComponent(result.data.next_cursor)}&page_size=${pageSize}`
+          : "";
+    }
+
+    return {
+      products: Array.from(products.values()).slice(0, limit),
+      pageCount,
+      error
+    };
   }
 
   async function loadProvinceCities(nextProvince: string) {

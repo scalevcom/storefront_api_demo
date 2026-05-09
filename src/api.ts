@@ -3,113 +3,66 @@ import {
   SCALEV_STORE_UNIQUE_ID,
   SCALEV_STOREFRONT_API_KEY
 } from "./config";
-import type { ApiDiagnostics, ApiMode, ApiResult } from "./types";
+import type { ApiDiagnostics, ApiResult } from "./types";
 
 type RequestOptions = Omit<RequestInit, "body" | "headers" | "mode"> & {
   body?: unknown;
   token?: string | null;
-  mode?: ApiMode;
 };
 
-let activeMode: ApiMode = "proxy";
 let guestToken =
   typeof window === "undefined" ? "" : window.localStorage.getItem("scalev_guest_token") || "";
 
-export function getActiveMode(): ApiMode {
-  return activeMode;
-}
-
 export async function probeScalev(): Promise<ApiDiagnostics> {
-  let directAttempted = false;
-  let directUsable = false;
-  let proxyUsable = false;
-  let message = "";
-
-  if (SCALEV_STOREFRONT_API_KEY) {
-    directAttempted = true;
-    try {
-      const direct = await requestJson("direct", "public/categories", {
-        method: "GET"
-      });
-      directUsable = direct.ok;
-      if (!direct.ok) {
-        message = `Direct browser call failed with HTTP ${direct.status}.`;
-      }
-    } catch (error) {
-      message = `Direct browser call failed before a usable response: ${formatError(error)}.`;
-    }
-  } else {
-    message = "Direct mode was skipped because no publishable storefront key was bundled.";
-  }
-
-  if (directUsable) {
-    activeMode = "direct";
+  if (!SCALEV_STOREFRONT_API_KEY) {
     return {
-      mode: "direct",
-      directAttempted,
-      directUsable,
-      proxyUsable,
-      message: "Direct browser-to-Scalev Storefront API calls are usable."
+      directUsable: false,
+      message: "Direct mode is unavailable because no publishable storefront key was bundled."
     };
   }
 
-  const proxy = await requestJson("proxy", "public/categories", { method: "GET" });
-  proxyUsable = proxy.ok;
-  activeMode = "proxy";
+  try {
+    const direct = await requestJson("public/categories", { method: "GET" });
+    if (direct.ok) {
+      return {
+        directUsable: true,
+        message: "Direct browser-to-Scalev Storefront API calls are active."
+      };
+    }
 
-  return {
-    mode: "proxy",
-    directAttempted,
-    directUsable,
-    proxyUsable,
-    message: proxyUsable
-      ? `${message} Cloudflare Pages Function proxy is active.`
-      : `${message} Proxy also failed with HTTP ${proxy.status}.`
-  };
+    return {
+      directUsable: false,
+      message: `Direct Scalev call failed with HTTP ${direct.status}.`
+    };
+  } catch (error) {
+    return {
+      directUsable: false,
+      message: `Direct Scalev call failed before a usable response: ${formatError(error)}.`
+    };
+  }
 }
 
 export async function scalevRequest<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<ApiResult<T>> {
-  const cleanPath = path.replace(/^\/+/, "");
-  const requestedMode = options.mode || activeMode;
   try {
-    return await requestJson<T>(requestedMode, path, options);
+    return await requestJson<T>(path, options);
   } catch (error) {
-    if (requestedMode === "direct") {
-      activeMode = "proxy";
-      try {
-        return await requestJson<T>("proxy", path, options);
-      } catch (proxyError) {
-        return {
-          ok: false,
-          status: 0,
-          error: formatError(proxyError),
-          mode: "proxy"
-        };
-      }
-    }
-
     return {
       ok: false,
       status: 0,
-      error: formatError(error),
-      mode: requestedMode
+      error: formatError(error)
     };
   }
 }
 
 async function requestJson<T = unknown>(
-  mode: ApiMode,
   path: string,
   options: RequestOptions = {}
 ): Promise<ApiResult<T>> {
   const cleanPath = path.replace(/^\/+/, "");
-  const url =
-    mode === "direct"
-      ? `${SCALEV_API_BASE}/v3/stores/${SCALEV_STORE_UNIQUE_ID}/${cleanPath}`
-      : `/api/scalev/${cleanPath}`;
+  const url = `${SCALEV_API_BASE}/v3/stores/${SCALEV_STORE_UNIQUE_ID}/${cleanPath}`;
 
   const headers = new Headers();
   headers.set("Accept", "application/json");
@@ -118,7 +71,7 @@ async function requestJson<T = unknown>(
     headers.set("Content-Type", "application/json");
   }
 
-  if (mode === "direct" && cleanPath.startsWith("public/")) {
+  if (cleanPath.startsWith("public/")) {
     headers.set("X-Scalev-Storefront-Api-Key", SCALEV_STOREFRONT_API_KEY);
     if (guestToken && shouldUseGuestToken(cleanPath)) {
       headers.set("X-Scalev-Guest-Token", guestToken);
@@ -131,7 +84,7 @@ async function requestJson<T = unknown>(
 
   const response = await fetch(url, {
     method: options.method || "GET",
-    credentials: mode === "direct" ? "omit" : "include",
+    credentials: "omit",
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
   });
@@ -156,8 +109,7 @@ async function requestJson<T = unknown>(
       status: response.status,
       data: data as T,
       error: extractError(data, text),
-      requestId,
-      mode
+      requestId
     };
   }
 
@@ -165,8 +117,7 @@ async function requestJson<T = unknown>(
     ok: true,
     status: response.status,
     data: data as T,
-    requestId,
-    mode
+    requestId
   };
 }
 

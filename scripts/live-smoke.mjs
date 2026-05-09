@@ -19,7 +19,7 @@ if (BUSINESS_API_KEY) {
 }
 
 if (!storefrontKey) {
-  throw new Error("Set SCALEV_STOREFRONT_API_KEY or SCALEV_API_KEY before running live smoke tests.");
+  throw new Error("Set SCALEV_STOREFRONT_API_KEY, VITE_SCALEV_STOREFRONT_API_KEY, or SCALEV_API_KEY before running live smoke tests.");
 }
 
 await probe("CORS preflight", async () =>
