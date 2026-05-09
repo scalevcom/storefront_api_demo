@@ -670,7 +670,7 @@ export default function App() {
     setBusyAction(null);
   }
 
-  async function sendOtp() {
+  async function startCustomerLogin() {
     if (!customerEmail || !customerPassword) {
       setCustomerOutput("Enter your email and password first.");
       return;
@@ -769,23 +769,33 @@ export default function App() {
   }
 
   function handleAuthResponse(label: string, result: ApiResult<Record<string, unknown>>) {
-    if (result.ok && result.data) {
-      const token = findToken(result.data);
-      if (token) {
-        setCustomerToken(token);
-        setOtpRequested(false);
-        setAccountMode("login");
-        localStorage.setItem("scalev_customer_token", token);
-      } else if (label === "Customer login") {
-        setOtpRequested(true);
-        setOtpCode("");
-      }
-      setCustomerOutput(token ? "You are signed in. Your account area is ready." : "Check your inbox for the sign-in code.");
-      addLog(label, "ok", token ? "Session saved." : "Response received.");
-    } else {
+    if (!result.ok) {
       setCustomerOutput("We could not complete sign in. Check your details and try again.");
       addLog(label, "error", `${result.status}: ${result.error || "Auth request failed"}`);
+      return;
     }
+
+    const token = result.data ? findToken(result.data) : null;
+    if (token) {
+      setCustomerToken(token);
+      setOtpRequested(false);
+      setAccountMode("login");
+      localStorage.setItem("scalev_customer_token", token);
+      setCustomerOutput("You are signed in. Your account area is ready.");
+      addLog(label, "ok", label === "Customer login" ? "Signed in without OTP challenge." : "Session saved.");
+      return;
+    }
+
+    if (label === "Customer login") {
+      setOtpRequested(true);
+      setOtpCode("");
+      setCustomerOutput("Check your inbox for the sign-in code.");
+      addLog(label, "ok", "OTP is required for this store; email code sent.");
+      return;
+    }
+
+    setCustomerOutput("Sign in succeeded, but no customer session token was returned.");
+    addLog(label, "error", "Auth response did not include a customer token.");
   }
 
   async function callCustomerEndpoint(label: string, path: string) {
@@ -1068,20 +1078,28 @@ export default function App() {
         resetToken={resetToken}
         onCallCustomerEndpoint={callCustomerEndpoint}
         onClose={() => setAccountOpen(false)}
-        onEmailChange={setCustomerEmail}
+        onEmailChange={(email) => {
+          setCustomerEmail(email);
+          setOtpRequested(false);
+          setOtpCode("");
+        }}
         onLogout={logoutCustomerJwt}
         onModeChange={(mode) => {
           setAccountMode(mode);
           if (mode === "reset") setOtpRequested(false);
         }}
         onOtpChange={setOtpCode}
-        onPasswordChange={setCustomerPassword}
+        onPasswordChange={(password) => {
+          setCustomerPassword(password);
+          setOtpRequested(false);
+          setOtpCode("");
+        }}
         onRefresh={refreshCustomerJwt}
         onRequestPasswordReset={requestPasswordReset}
         onResetPasswordChange={setResetPassword}
         onResetTokenChange={setResetToken}
         onSavePasswordReset={savePasswordReset}
-        onSendOtp={sendOtp}
+        onStartCustomerLogin={startCustomerLogin}
         onVerifyOtp={verifyOtp}
         open={accountOpen}
         otpCode={otpCode}
@@ -1566,7 +1584,7 @@ interface AccountDrawerProps {
   onResetPasswordChange: (value: string) => void;
   onResetTokenChange: (value: string) => void;
   onSavePasswordReset: () => void | Promise<void>;
-  onSendOtp: () => void | Promise<void>;
+  onStartCustomerLogin: () => void | Promise<void>;
   onVerifyOtp: () => void | Promise<void>;
   open: boolean;
   otpCode: string;
@@ -1594,7 +1612,7 @@ function AccountDrawer({
   onResetPasswordChange,
   onResetTokenChange,
   onSavePasswordReset,
-  onSendOtp,
+  onStartCustomerLogin,
   onVerifyOtp,
   open,
   otpCode
@@ -1668,9 +1686,19 @@ function AccountDrawer({
               ) : null}
             </div>
             <div className="account-actions">
-              <button className="checkout-button" onClick={() => void onSendOtp()} disabled={busyAction === "otp"}>
-                {busyAction === "otp" ? <Loader2 size={18} className="spin" /> : <Mail size={18} />}
-                {otpRequested ? "Resend code" : "Send code"}
+              <button
+                className="checkout-button"
+                onClick={() => void onStartCustomerLogin()}
+                disabled={busyAction === "otp"}
+              >
+                {busyAction === "otp" ? (
+                  <Loader2 size={18} className="spin" />
+                ) : otpRequested ? (
+                  <Mail size={18} />
+                ) : (
+                  <LogIn size={18} />
+                )}
+                {otpRequested ? "Resend code" : "Sign in"}
               </button>
               {otpRequested ? (
                 <button
