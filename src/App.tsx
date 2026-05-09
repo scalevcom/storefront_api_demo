@@ -100,6 +100,7 @@ export default function App() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPassword, setCustomerPassword] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const [otpRequested, setOtpRequested] = useState(false);
   const [accountMode, setAccountMode] = useState<AccountMode>(() =>
     initialResetToken() ? "reset" : "login"
   );
@@ -750,6 +751,7 @@ export default function App() {
       setCustomerPassword(resetPassword);
       setResetPassword("");
       setResetToken("");
+      setOtpRequested(false);
       setAccountMode("login");
       setCustomerOutput("Password saved. Sign in with your new password.");
       addLog("Save password", "ok", "Customer password reset completed.");
@@ -771,7 +773,12 @@ export default function App() {
       const token = findToken(result.data);
       if (token) {
         setCustomerToken(token);
+        setOtpRequested(false);
+        setAccountMode("login");
         localStorage.setItem("scalev_customer_token", token);
+      } else if (label === "Customer login") {
+        setOtpRequested(true);
+        setOtpCode("");
       }
       setCustomerOutput(token ? "You are signed in. Your account area is ready." : "Check your inbox for the sign-in code.");
       addLog(label, "ok", token ? "Session saved." : "Response received.");
@@ -836,6 +843,7 @@ export default function App() {
 
   function clearCustomerSession() {
     setCustomerToken("");
+    setOtpRequested(false);
     setCustomerOutput("You have been signed out.");
     localStorage.removeItem("scalev_customer_token");
     addLog("Customer session", "warn", "Local session cleared.");
@@ -1055,13 +1063,17 @@ export default function App() {
         customerPassword={customerPassword}
         customerToken={customerToken}
         busyAction={busyAction}
+        otpRequested={otpRequested}
         resetPassword={resetPassword}
         resetToken={resetToken}
         onCallCustomerEndpoint={callCustomerEndpoint}
         onClose={() => setAccountOpen(false)}
         onEmailChange={setCustomerEmail}
         onLogout={logoutCustomerJwt}
-        onModeChange={setAccountMode}
+        onModeChange={(mode) => {
+          setAccountMode(mode);
+          if (mode === "reset") setOtpRequested(false);
+        }}
         onOtpChange={setOtpCode}
         onPasswordChange={setCustomerPassword}
         onRefresh={refreshCustomerJwt}
@@ -1539,6 +1551,7 @@ interface AccountDrawerProps {
   customerOutput: string;
   customerPassword: string;
   customerToken: string;
+  otpRequested: boolean;
   resetPassword: string;
   resetToken: string;
   onCallCustomerEndpoint: (label: string, path: string) => void | Promise<void>;
@@ -1566,6 +1579,7 @@ function AccountDrawer({
   customerOutput,
   customerPassword,
   customerToken,
+  otpRequested,
   resetPassword,
   resetToken,
   onCallCustomerEndpoint,
@@ -1597,23 +1611,41 @@ function AccountDrawer({
             <X size={22} />
           </button>
         </div>
-        <div className="mode-switch account-mode-switch" role="tablist" aria-label="Account mode">
-          <button
-            className={accountMode === "login" ? "active" : ""}
-            type="button"
-            onClick={() => onModeChange("login")}
-          >
-            Sign in
-          </button>
-          <button
-            className={accountMode === "reset" ? "active" : ""}
-            type="button"
-            onClick={() => onModeChange("reset")}
-          >
-            Reset password
-          </button>
-        </div>
-        {accountMode === "login" ? (
+        {!customerToken ? (
+          <div className="mode-switch account-mode-switch" role="tablist" aria-label="Account mode">
+            <button
+              className={accountMode === "login" ? "active" : ""}
+              type="button"
+              onClick={() => onModeChange("login")}
+            >
+              Sign in
+            </button>
+            <button
+              className={accountMode === "reset" ? "active" : ""}
+              type="button"
+              onClick={() => onModeChange("reset")}
+            >
+              Reset password
+            </button>
+          </div>
+        ) : null}
+        {customerToken ? (
+          <div className="account-actions account-actions-stacked">
+            <button onClick={() => void onCallCustomerEndpoint("Account details", "customers/me")}>
+              Account details
+            </button>
+            <button onClick={() => void onCallCustomerEndpoint("Order history", "customers/me/orders")}>
+              Order history
+            </button>
+            <button onClick={() => void onCallCustomerEndpoint("Memberships", "customers/me/subscriptions")}>
+              Memberships
+            </button>
+            <button onClick={() => void onRefresh()}>Keep me signed in</button>
+            <button className="danger-text" onClick={() => void onLogout()}>
+              Sign out
+            </button>
+          </div>
+        ) : accountMode === "login" ? (
           <>
             <div className="form-grid">
               <label>
@@ -1628,33 +1660,28 @@ function AccountDrawer({
                   onChange={(event) => onPasswordChange(event.target.value)}
                 />
               </label>
-              <label>
-                <span>One-time code</span>
-                <input value={otpCode} onChange={(event) => onOtpChange(event.target.value)} />
-              </label>
+              {otpRequested ? (
+                <label>
+                  <span>One-time code</span>
+                  <input value={otpCode} onChange={(event) => onOtpChange(event.target.value)} />
+                </label>
+              ) : null}
             </div>
             <div className="account-actions">
               <button className="checkout-button" onClick={() => void onSendOtp()} disabled={busyAction === "otp"}>
                 {busyAction === "otp" ? <Loader2 size={18} className="spin" /> : <Mail size={18} />}
-                Send code
+                {otpRequested ? "Resend code" : "Send code"}
               </button>
-              <button onClick={() => void onVerifyOtp()} disabled={busyAction === "otp-verify"}>
-                <LogIn size={17} />
-                Verify
-              </button>
-              <button onClick={() => void onCallCustomerEndpoint("Account details", "customers/me")}>
-                Account details
-              </button>
-              <button onClick={() => void onCallCustomerEndpoint("Order history", "customers/me/orders")}>
-                Order history
-              </button>
-              <button onClick={() => void onCallCustomerEndpoint("Memberships", "customers/me/subscriptions")}>
-                Memberships
-              </button>
-              <button onClick={() => void onRefresh()}>Keep me signed in</button>
-              <button className="danger-text" onClick={() => void onLogout()}>
-                Sign out
-              </button>
+              {otpRequested ? (
+                <button
+                  className="checkout-button"
+                  onClick={() => void onVerifyOtp()}
+                  disabled={busyAction === "otp-verify"}
+                >
+                  {busyAction === "otp-verify" ? <Loader2 size={17} className="spin" /> : <LogIn size={17} />}
+                  Verify code
+                </button>
+              ) : null}
             </div>
           </>
         ) : (
