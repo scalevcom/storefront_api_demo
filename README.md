@@ -33,3 +33,15 @@ npm run live:smoke
 ```
 
 The storefront runtime uses `SCALEV_STORE_UNIQUE_ID` only. The smoke script can use `SCALEV_BUSINESS_STORE_ID` only to discover the existing publishable storefront key when `SCALEV_STOREFRONT_API_KEY` is missing or stale. The browser never receives the business API key, and the Pages Function forwards only Storefront API requests with the publishable storefront key.
+
+## Deployment
+
+Pushes to `main` deploy `dist` to the Cloudflare Pages project `storefront-api-demo` through `.github/workflows/deploy.yml`.
+
+Required GitHub Actions secrets:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
+- `VITE_SCALEV_STOREFRONT_API_KEY`
+
+The Cloudflare Pages project must also keep the runtime secret `SCALEV_STOREFRONT_API_KEY` configured for the Pages Function proxy.
