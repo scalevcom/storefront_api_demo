@@ -588,12 +588,14 @@ export default function App() {
     setBusyAction("checkout");
     const items =
       cart?.items?.map((item) => ({
+        type: "variant",
         variant_id: item.variant_id,
         quantity: item.quantity
       })) ||
       (selectedVariant
         ? [
             {
+              type: "variant",
               variant_id: selectedVariant.id,
               quantity
             }
@@ -614,7 +616,7 @@ export default function App() {
       shipping_location_id: selectedLocation?.id,
       payment_method: checkoutForm.paymentMethod
     };
-    const result = await scalevRequest<Record<string, unknown>>("public/guest-checkout", {
+    const result = await scalevRequest<Record<string, unknown>>("public/checkout", {
       method: "POST",
       body: payload
     });

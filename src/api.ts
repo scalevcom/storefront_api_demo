@@ -141,7 +141,7 @@ function extractError(data: unknown, fallback: string): string {
 }
 
 function shouldUseGuestToken(path: string): boolean {
-  return path.startsWith("public/cart") || path === "public/guest-checkout";
+  return path.startsWith("public/cart") || path.startsWith("public/checkout");
 }
 
 function formatError(error: unknown): string {

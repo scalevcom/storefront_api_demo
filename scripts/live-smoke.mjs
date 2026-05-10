@@ -162,14 +162,14 @@ await probe("Add cart item", async () =>
 );
 
 const checkout = await probe("Guest checkout", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/guest-checkout`, {
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/checkout`, {
     method: "POST",
     headers: publicHeaders({
       "Content-Type": "application/json",
       "X-Scalev-Guest-Token": guestToken
     }),
     body: JSON.stringify({
-      items: [{ variant_id: 494535, quantity: 1 }],
+      items: [{ type: "variant", variant_id: 494535, quantity: 1 }],
       customer_name: "Demo Customer",
       customer_email: "demo.customer@example.com",
       customer_phone: "6281234567890",
