@@ -3,6 +3,7 @@ const API_BASE = process.env.SCALEV_API_BASE || "https://api.scalev.com";
 const STORE_ID = process.env.SCALEV_STORE_UNIQUE_ID || "store_vlzpML8edzxO5roOdV7Oyfn6";
 const DEMO_ORIGIN = "https://demo.scalev.shop";
 const storefrontKey = process.env.SCALEV_STOREFRONT_API_KEY || process.env.VITE_SCALEV_STOREFRONT_API_KEY;
+const runId = Date.now();
 
 const results = [];
 
@@ -57,6 +58,46 @@ await probe("Product list page size 12", async () =>
     headers: publicHeaders()
   })
 );
+
+await probe("Bundle price option count", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/bundle-price-options/count`, {
+    headers: publicHeaders()
+  })
+);
+
+const bundlePriceOptions = await probe("Bundle price option list", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/bundle-price-options?page_size=5`, {
+    headers: publicHeaders()
+  })
+);
+
+const bundlePriceOption = bundlePriceOptions.body?.data?.[0];
+if (bundlePriceOption?.slug) {
+  await probe("Bundle price option detail", async () =>
+    fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/bundle-price-options/${bundlePriceOption.slug}`, {
+      headers: publicHeaders()
+    })
+  );
+
+  await probe("Bundle price option summary", async () =>
+    fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/checkout/summary`, {
+      method: "POST",
+      headers: publicHeaders({
+        "Content-Type": "application/json"
+      }),
+      body: JSON.stringify({
+        items: [
+          {
+            type: "bundle_price_option",
+            bundle_price_option_id: bundlePriceOption.id,
+            quantity: 1
+          }
+        ],
+        payment_method: "bank_transfer"
+      })
+    })
+  );
+}
 
 await probe("Product detail", async () =>
   fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products/new-digital-agis`, {
@@ -197,6 +238,36 @@ if (orderSecret) {
     fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/orders/${orderSecret}/payment`, {
       method: "POST",
       headers: publicHeaders()
+    })
+  );
+}
+
+if (bundlePriceOption?.id) {
+  await probe("Bundle price option checkout", async () =>
+    fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/checkout`, {
+      method: "POST",
+      headers: publicHeaders({
+        "Content-Type": "application/json"
+      }),
+      body: JSON.stringify({
+        items: [
+          {
+            type: "bundle_price_option",
+            bundle_price_option_id: bundlePriceOption.id,
+            quantity: 1
+          }
+        ],
+        customer_name: "Demo Customer",
+        customer_email: `demo.customer+bundle-${runId}@example.com`,
+        customer_phone: "6281234567890",
+        shipping_address: "Jl. Demo Storefront API No. 3",
+        shipping_city: "Kota Jakarta Pusat",
+        shipping_province: "DKI Jakarta",
+        shipping_subdistrict: "Cempaka Putih",
+        shipping_postal_code: "10510",
+        shipping_location_id: 9089,
+        payment_method: "bank_transfer"
+      })
     })
   );
 }

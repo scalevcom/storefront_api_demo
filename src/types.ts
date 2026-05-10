@@ -43,6 +43,9 @@ export interface Product {
   name: string;
   description?: string | null;
   rich_description?: string | null;
+  bpo_name?: string;
+  price?: string;
+  weight_bump?: number | null;
   meta_thumbnail?: string | null;
   item_type?: string;
   is_multiple?: boolean;
@@ -58,6 +61,12 @@ export interface Product {
     full_path?: string;
   } | null;
   variants?: ProductVariant[];
+  bundlelines?: Array<{
+    variant_id?: number;
+    quantity?: number;
+    variant_name?: string;
+    product_name?: string;
+  }>;
 }
 
 export interface Category {
@@ -105,8 +114,13 @@ export interface PaymentMethod {
 
 export interface CartItem {
   id: number | string;
+  type?: string;
   quantity: number;
   variant_id?: number | string;
+  bundle_price_option_id?: number | string;
+  bundle_price_option_name?: string;
+  bundle_name?: string;
+  line_subtotal?: string;
   variant?: ProductVariant & {
     product?: Product;
   };

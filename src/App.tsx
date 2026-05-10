@@ -223,6 +223,8 @@ export default function App() {
   useEffect(() => {
     if (selectedVariantId) {
       void loadVariantAvailability(selectedVariantId);
+    } else {
+      setAvailability("");
     }
   }, [selectedVariantId]);
 
@@ -237,21 +239,39 @@ export default function App() {
     const probe = await probeScalev();
     addLog("Connectivity", probe.directUsable ? "ok" : "error", probe.message);
 
-    const [countResult, categoriesResult, productPages, pricingResult, paymentMethodsResult, provincesResult] =
-      await Promise.all([
-        scalevRequest<{ total: number }>("public/products/count"),
-        scalevRequest<CollectionResponse<Category>>("public/categories"),
-        loadProductPages(12),
-        scalevRequest<CollectionResponse<Record<string, unknown>>>(
-          `public/variants/pricing?ids=${DEMO_VARIANT_IDS.join(",")}`
-        ),
-        scalevRequest<CollectionResponse<PaymentMethod>>("public/payment-methods"),
-        scalevRequest<CollectionResponse<ProvinceOption>>("public/locations/provinces")
-      ]);
+    const [
+      countResult,
+      bundlePriceOptionCountResult,
+      categoriesResult,
+      productPages,
+      bundlePriceOptionPages,
+      pricingResult,
+      paymentMethodsResult,
+      provincesResult
+    ] = await Promise.all([
+      scalevRequest<{ total: number }>("public/products/count"),
+      scalevRequest<{ total: number }>("public/bundle-price-options/count"),
+      scalevRequest<CollectionResponse<Category>>("public/categories"),
+      loadProductPages(12),
+      loadBundlePriceOptionPages(12),
+      scalevRequest<CollectionResponse<Record<string, unknown>>>(
+        `public/variants/pricing?ids=${DEMO_VARIANT_IDS.join(",")}`
+      ),
+      scalevRequest<CollectionResponse<PaymentMethod>>("public/payment-methods"),
+      scalevRequest<CollectionResponse<ProvinceOption>>("public/locations/provinces")
+    ]);
 
     if (countResult.ok && countResult.data) {
       setProductCount(Number(countResult.data.total));
       addLog("Product count", "ok", `Scalev returned ${countResult.data.total} public products.`);
+    }
+
+    if (bundlePriceOptionCountResult.ok && bundlePriceOptionCountResult.data) {
+      addLog(
+        "Bundle price options",
+        "ok",
+        `Scalev returned ${bundlePriceOptionCountResult.data.total} public bundle price options.`
+      );
     }
 
     if (categoriesResult.ok && categoriesResult.data?.data) {
@@ -287,14 +307,20 @@ export default function App() {
       addLog("Delivery provinces", "ok", `Loaded ${provincesResult.data.data.length} provinces.`);
     }
 
-    if (productPages.products.length) {
-      setProducts(productPages.products);
+    const catalogItems = [
+      ...productPages.products.filter((product) => product.item_type !== "bundle"),
+      ...bundlePriceOptionPages.products
+    ].slice(0, 18);
+
+    if (catalogItems.length) {
+      setProducts(catalogItems);
+      setProductCount(catalogItems.length);
       addLog(
-        "Product list",
-        productPages.error ? "warn" : "ok",
-        `Loaded ${productPages.products.length} products from ${productPages.pageCount} cursor page${
-          productPages.pageCount === 1 ? "" : "s"
-        }.`
+        "Catalog list",
+        productPages.error || bundlePriceOptionPages.error ? "warn" : "ok",
+        `Loaded ${productPages.products.length} products and ${
+          bundlePriceOptionPages.products.length
+        } bundle price options.`
       );
     } else {
       const detail = `${productPages.error?.status || 0}: ${
@@ -346,6 +372,38 @@ export default function App() {
       endpoint =
         result.data.has_next && result.data.next_cursor
           ? `public/products?next_cursor=${encodeURIComponent(result.data.next_cursor)}&page_size=${pageSize}`
+          : "";
+    }
+
+    return {
+      products: Array.from(products.values()).slice(0, limit),
+      pageCount,
+      error
+    };
+  }
+
+  async function loadBundlePriceOptionPages(limit: number) {
+    const products = new Map<number, Product>();
+    const pageSize = 5;
+    let endpoint = `public/bundle-price-options?page_size=${pageSize}`;
+    let pageCount = 0;
+    let error: ApiResult<CollectionResponse<Product>> | undefined;
+
+    while (endpoint && products.size < limit && pageCount < 8) {
+      const result = await scalevRequest<CollectionResponse<Product>>(endpoint);
+      if (!result.ok || !result.data?.data) {
+        error = result;
+        break;
+      }
+
+      pageCount += 1;
+      for (const product of result.data.data) {
+        products.set(product.id, product);
+      }
+
+      endpoint =
+        result.data.has_next && result.data.next_cursor
+          ? `public/bundle-price-options?next_cursor=${encodeURIComponent(result.data.next_cursor)}&page_size=${pageSize}`
           : "";
     }
 
@@ -542,9 +600,35 @@ export default function App() {
     setBusyAction(null);
   }
 
-  async function addProductToCart(product: Product) {
+  async function addBundlePriceOptionToCart(product: Product, amount = quantity) {
+    setBusyAction(`add-bpo-${product.id}`);
+    const result = await scalevRequest<Cart>("public/cart/items", {
+      method: "POST",
+      body: {
+        type: "bundle",
+        bundle_price_option_id: product.id,
+        quantity: amount
+      }
+    });
+    if (result.ok) {
+      addLog("Add to cart", "ok", `${product.name} x${amount}`);
+      await refreshCart("Cart refresh");
+      setCartOpen(true);
+    } else {
+      addLog("Add to cart", "error", `${result.status}: ${result.error || "Unable to add bundle price option"}`);
+      setShopNotice("We could not add that bundle. Please try again.");
+    }
+    setBusyAction(null);
+  }
+
+  async function addProductToCart(product: Product, amount = 1) {
+    if (isBundlePriceOption(product)) {
+      await addBundlePriceOptionToCart(product, amount);
+      return;
+    }
+
     const variant = product.variants?.[0] || null;
-    await addToCart(variant, 1);
+    await addToCart(variant, amount);
   }
 
   function openQuickView(product: Product) {
@@ -587,11 +671,7 @@ export default function App() {
   async function runGuestCheckout() {
     setBusyAction("checkout");
     const items =
-      cart?.items?.map((item) => ({
-        type: "variant",
-        variant_id: item.variant_id,
-        quantity: item.quantity
-      })) ||
+      cart?.items?.map(cartItemToCheckoutItem).filter((item): item is CheckoutItemInput => !!item) ||
       (selectedVariant
         ? [
             {
@@ -1003,14 +1083,14 @@ export default function App() {
                   )}
                 </button>
                 <div className="product-info">
-                  <span>{product.item_type || "product"}</span>
+                  <span>{catalogItemLabel(product)}</span>
                   <button onClick={() => openQuickView(product)}>{product.name}</button>
                   <div className="product-footer">
-                    <strong>{money(product.price_range?.min, product.variants?.[0]?.currency || "IDR")}</strong>
+                    <strong>{money(product.price_range?.min || product.price, product.variants?.[0]?.currency || "IDR")}</strong>
                     <button
                       className="small-add"
                       onClick={() => void addProductToCart(product)}
-                      disabled={!product.variants?.length || busyAction === `add-${product.variants?.[0]?.id}`}
+                      disabled={!canAddProduct(product) || busyAction === productBusyKey(product)}
                     >
                       <Plus size={17} />
                       Add
@@ -1080,9 +1160,9 @@ export default function App() {
       />
 
       <QuickView
-        availability={availability}
+        availability={selectedVariant ? availability : selectedProduct?.in_stock ? "Available" : "Sold out"}
         busyAction={busyAction}
-        onAdd={() => void addToCart(selectedVariant)}
+        onAdd={() => selectedProduct && void addProductToCart(selectedProduct, quantity)}
         onClose={() => setQuickViewOpen(false)}
         onQuantityChange={setQuantity}
         onVariantChange={setSelectedVariantId}
@@ -1544,9 +1624,9 @@ function QuickView({
           )}
         </div>
         <div className="quick-copy">
-          <p className="store-kicker">{product.item_type || "Product"}</p>
+          <p className="store-kicker">{catalogItemLabel(product)}</p>
           <h2>{product.name}</h2>
-          <p className="price-line">{money(selectedVariant?.price || product.price_range?.min, selectedVariant?.currency || "IDR")}</p>
+          <p className="price-line">{money(selectedVariant?.price || product.price_range?.min || product.price, selectedVariant?.currency || "IDR")}</p>
           <p className="product-description">
             {product.description || product.rich_description || "Selected from this week's curated collection."}
           </p>
@@ -1576,7 +1656,7 @@ function QuickView({
             <button
               className="checkout-button"
               onClick={() => void onAdd()}
-              disabled={!selectedVariant || busyAction === `add-${selectedVariant?.id}`}
+              disabled={!canAddProduct(product) || busyAction === productBusyKey(product)}
               data-testid="add-to-cart"
             >
               <ShoppingCart size={19} />
@@ -1802,10 +1882,60 @@ function AccountDrawer({
   );
 }
 
+type CheckoutItemInput =
+  | {
+      type: "variant";
+      variant_id: number | string;
+      quantity: number;
+    }
+  | {
+      type: "bundle_price_option";
+      bundle_price_option_id: number | string;
+      quantity: number;
+    };
+
+function isBundlePriceOption(product?: Product | null): boolean {
+  return product?.item_type === "bundle_price_option";
+}
+
+function canAddProduct(product: Product): boolean {
+  if (isBundlePriceOption(product)) return product.in_stock !== false;
+  return Boolean(product.variants?.length);
+}
+
+function productBusyKey(product: Product): string {
+  return isBundlePriceOption(product) ? `add-bpo-${product.id}` : `add-${product.variants?.[0]?.id}`;
+}
+
+function catalogItemLabel(product: Product): string {
+  if (isBundlePriceOption(product)) return "Bundle";
+  return product.item_type || "Product";
+}
+
+function cartItemToCheckoutItem(item: CartItem): CheckoutItemInput | null {
+  if (item.bundle_price_option_id) {
+    return {
+      type: "bundle_price_option",
+      bundle_price_option_id: item.bundle_price_option_id,
+      quantity: Number(item.quantity || 1)
+    };
+  }
+
+  if (item.variant_id) {
+    return {
+      type: "variant",
+      variant_id: item.variant_id,
+      quantity: Number(item.quantity || 1)
+    };
+  }
+
+  return null;
+}
+
 function cartItemTitle(item: CartItem): string {
   const variant = item.variant;
   const product = item.product || variant?.product;
-  const directName = item.product_name || item.variant_name;
+  const directName = item.bundle_name || item.product_name || item.variant_name;
   if (typeof directName === "string") return directName;
   return product?.name || variant?.fullname || `Item ${item.id}`;
 }
