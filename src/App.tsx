@@ -134,10 +134,13 @@ export default function App() {
       const matchesQuery =
         !query ||
         product.name.toLowerCase().includes(query) ||
+        catalogItemLabel(product).toLowerCase().includes(query) ||
         product.item_type?.toLowerCase().includes(query) ||
+        product.entity_type?.toLowerCase().includes(query) ||
         product.taxonomy?.full_path?.toLowerCase().includes(query);
       const matchesCategory =
         activeCategory === "All" ||
+        catalogItemLabel(product).toLowerCase() === activeCategory.toLowerCase() ||
         product.item_type?.toLowerCase() === activeCategory.toLowerCase() ||
         product.taxonomy?.full_path?.includes(activeCategory);
       return matchesQuery && matchesCategory;
@@ -145,7 +148,7 @@ export default function App() {
   }, [activeCategory, products, searchTerm]);
 
   const categoryFilters = useMemo(() => {
-    const itemTypes = new Set(products.map((product) => product.item_type).filter(Boolean) as string[]);
+    const itemTypes = new Set(products.map((product) => catalogItemLabel(product)).filter(Boolean));
     const apiCategories = categories.map((category) => category.name).slice(0, 3);
     return ["All", ...Array.from(itemTypes), ...apiCategories].slice(0, 6);
   }, [categories, products]);
@@ -241,19 +244,15 @@ export default function App() {
 
     const [
       countResult,
-      bundlePriceOptionCountResult,
       categoriesResult,
-      productPages,
-      bundlePriceOptionPages,
+      itemPages,
       pricingResult,
       paymentMethodsResult,
       provincesResult
     ] = await Promise.all([
-      scalevRequest<{ total: number }>("public/products/count"),
-      scalevRequest<{ total: number }>("public/bundle-price-options/count"),
+      scalevRequest<{ total: number }>("public/items/count"),
       scalevRequest<CollectionResponse<Category>>("public/categories"),
-      loadProductPages(12),
-      loadBundlePriceOptionPages(12),
+      loadItemPages(18),
       scalevRequest<CollectionResponse<Record<string, unknown>>>(
         `public/variants/pricing?ids=${DEMO_VARIANT_IDS.join(",")}`
       ),
@@ -263,15 +262,7 @@ export default function App() {
 
     if (countResult.ok && countResult.data) {
       setProductCount(Number(countResult.data.total));
-      addLog("Product count", "ok", `Scalev returned ${countResult.data.total} public products.`);
-    }
-
-    if (bundlePriceOptionCountResult.ok && bundlePriceOptionCountResult.data) {
-      addLog(
-        "Bundle price options",
-        "ok",
-        `Scalev returned ${bundlePriceOptionCountResult.data.total} public bundle price options.`
-      );
+      addLog("Storefront items", "ok", `Scalev returned ${countResult.data.total} public catalog items.`);
     }
 
     if (categoriesResult.ok && categoriesResult.data?.data) {
@@ -307,28 +298,22 @@ export default function App() {
       addLog("Delivery provinces", "ok", `Loaded ${provincesResult.data.data.length} provinces.`);
     }
 
-    const catalogItems = [
-      ...productPages.products.filter((product) => product.item_type !== "bundle"),
-      ...bundlePriceOptionPages.products
-    ].slice(0, 18);
+    const catalogItems = itemPages.products.slice(0, 18);
 
     if (catalogItems.length) {
       setProducts(catalogItems);
-      setProductCount(catalogItems.length);
       addLog(
         "Catalog list",
-        productPages.error || bundlePriceOptionPages.error ? "warn" : "ok",
-        `Loaded ${productPages.products.length} products and ${
-          bundlePriceOptionPages.products.length
-        } bundle price options.`
+        itemPages.error ? "warn" : "ok",
+        `Loaded ${catalogItems.length} catalog items from the unified items endpoint.`
       );
     } else {
-      const detail = `${productPages.error?.status || 0}: ${
-        productPages.error?.error || "GET /public/products failed"
+      const detail = `${itemPages.error?.status || 0}: ${
+        itemPages.error?.error || "GET /public/items failed"
       }${
-        productPages.error?.requestId ? ` (request ${productPages.error.requestId})` : ""
+        itemPages.error?.requestId ? ` (request ${itemPages.error.requestId})` : ""
       }`;
-      addLog("Product list", "error", detail);
+      addLog("Catalog list", "error", detail);
       setShopNotice("A few shelves are being refreshed. Showing this week's featured picks.");
       const fallbackProducts = await loadFallbackProducts();
       setProducts(fallbackProducts);
@@ -350,10 +335,10 @@ export default function App() {
       .map((result) => result.data);
   }
 
-  async function loadProductPages(limit: number) {
-    const products = new Map<number, Product>();
+  async function loadItemPages(limit: number) {
+    const products = new Map<string, Product>();
     const pageSize = 5;
-    let endpoint = `public/products?page_size=${pageSize}`;
+    let endpoint = `public/items?page_size=${pageSize}`;
     let pageCount = 0;
     let error: ApiResult<CollectionResponse<Product>> | undefined;
 
@@ -366,44 +351,12 @@ export default function App() {
 
       pageCount += 1;
       for (const product of result.data.data) {
-        products.set(product.id, product);
+        products.set(`${product.entity_type || product.item_type || "item"}:${product.id}`, product);
       }
 
       endpoint =
         result.data.has_next && result.data.next_cursor
-          ? `public/products?next_cursor=${encodeURIComponent(result.data.next_cursor)}&page_size=${pageSize}`
-          : "";
-    }
-
-    return {
-      products: Array.from(products.values()).slice(0, limit),
-      pageCount,
-      error
-    };
-  }
-
-  async function loadBundlePriceOptionPages(limit: number) {
-    const products = new Map<number, Product>();
-    const pageSize = 5;
-    let endpoint = `public/bundle-price-options?page_size=${pageSize}`;
-    let pageCount = 0;
-    let error: ApiResult<CollectionResponse<Product>> | undefined;
-
-    while (endpoint && products.size < limit && pageCount < 8) {
-      const result = await scalevRequest<CollectionResponse<Product>>(endpoint);
-      if (!result.ok || !result.data?.data) {
-        error = result;
-        break;
-      }
-
-      pageCount += 1;
-      for (const product of result.data.data) {
-        products.set(product.id, product);
-      }
-
-      endpoint =
-        result.data.has_next && result.data.next_cursor
-          ? `public/bundle-price-options?next_cursor=${encodeURIComponent(result.data.next_cursor)}&page_size=${pageSize}`
+          ? `public/items?next_cursor=${encodeURIComponent(result.data.next_cursor)}&page_size=${pageSize}`
           : "";
     }
 
@@ -585,6 +538,7 @@ export default function App() {
     const result = await scalevRequest<Cart>("public/cart/items", {
       method: "POST",
       body: {
+        type: "variant",
         variant_id: variant.id,
         quantity: amount
       }
@@ -605,8 +559,8 @@ export default function App() {
     const result = await scalevRequest<Cart>("public/cart/items", {
       method: "POST",
       body: {
-        type: "bundle",
-        bundle_price_option_id: product.id,
+        type: "bundle_price_option",
+        bundle_price_option_id: product.bundle_price_option_id || product.id,
         quantity: amount
       }
     });
@@ -1895,7 +1849,7 @@ type CheckoutItemInput =
     };
 
 function isBundlePriceOption(product?: Product | null): boolean {
-  return product?.item_type === "bundle_price_option";
+  return product?.entity_type === "bundle_price_option" || product?.item_type === "bundle_price_option";
 }
 
 function canAddProduct(product: Product): boolean {

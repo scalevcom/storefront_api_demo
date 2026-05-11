@@ -12,7 +12,7 @@ if (!storefrontKey) {
 }
 
 await probe("CORS preflight", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products/count`, {
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/items/count`, {
     method: "OPTIONS",
     headers: {
       Origin: "https://demo.scalev.shop",
@@ -23,28 +23,28 @@ await probe("CORS preflight", async () =>
 );
 
 await probe("CORS actual count", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products/count`, {
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/items/count`, {
     headers: publicHeaders({ Origin: "https://demo.scalev.shop" })
   })
 );
 
-await probe("Product count", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products/count`, {
+await probe("Storefront item count", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/items/count`, {
     headers: publicHeaders()
   })
 );
 
-const productList = await probe("Product list", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products?page_size=5`, {
+const itemList = await probe("Storefront item list", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/items?page_size=5`, {
     headers: publicHeaders()
   })
 );
 
-if (productList.body?.next_cursor) {
-  await probe("Product list next cursor", async () =>
+if (itemList.body?.next_cursor) {
+  await probe("Storefront item list next cursor", async () =>
     fetch(
-      `${API_BASE}/v3/stores/${STORE_ID}/public/products?next_cursor=${encodeURIComponent(
-        productList.body.next_cursor
+      `${API_BASE}/v3/stores/${STORE_ID}/public/items?next_cursor=${encodeURIComponent(
+        itemList.body.next_cursor
       )}&page_size=5`,
       {
         headers: publicHeaders()
@@ -53,26 +53,19 @@ if (productList.body?.next_cursor) {
   );
 }
 
-await probe("Product list page size 12", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products?page_size=12`, {
+await probe("Storefront item list page size 12", async () =>
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/items?page_size=12`, {
     headers: publicHeaders()
   })
 );
 
-await probe("Bundle price option count", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/bundle-price-options/count`, {
-    headers: publicHeaders()
-  })
-);
+const itemSamples = await collectStorefrontItems(60);
+const product = itemSamples.find((item) => item.entity_type === "product") || itemSamples[0];
+const bundlePriceOption = itemSamples.find((item) => item.entity_type === "bundle_price_option");
 
-const bundlePriceOptions = await probe("Bundle price option list", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/bundle-price-options?page_size=5`, {
-    headers: publicHeaders()
-  })
-);
-
-const bundlePriceOption = bundlePriceOptions.body?.data?.[0];
 if (bundlePriceOption?.slug) {
+  const bundlePriceOptionId = bundlePriceOption.bundle_price_option_id || bundlePriceOption.id;
+
   await probe("Bundle price option detail", async () =>
     fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/bundle-price-options/${bundlePriceOption.slug}`, {
       headers: publicHeaders()
@@ -89,7 +82,7 @@ if (bundlePriceOption?.slug) {
         items: [
           {
             type: "bundle_price_option",
-            bundle_price_option_id: bundlePriceOption.id,
+            bundle_price_option_id: bundlePriceOptionId,
             quantity: 1
           }
         ],
@@ -97,10 +90,56 @@ if (bundlePriceOption?.slug) {
       })
     })
   );
+
+  let bundleGuestToken = "";
+  await probe("Bundle price option guest cart", async () => {
+    const response = await fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/cart`, {
+      headers: publicHeaders()
+    });
+    bundleGuestToken = extractGuestToken(response);
+    return response;
+  });
+
+  await probe("Add bundle price option cart item", async () =>
+    fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/cart/items`, {
+      method: "POST",
+      headers: publicHeaders({
+        "Content-Type": "application/json",
+        "X-Scalev-Guest-Token": bundleGuestToken
+      }),
+      body: JSON.stringify({
+        type: "bundle_price_option",
+        bundle_price_option_id: bundlePriceOptionId,
+        quantity: 1
+      })
+    })
+  );
+
+  await probe("Bundle price option cart checkout", async () =>
+    fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/checkout`, {
+      method: "POST",
+      headers: publicHeaders({
+        "Content-Type": "application/json",
+        "X-Scalev-Guest-Token": bundleGuestToken
+      }),
+      body: JSON.stringify({
+        customer_name: "Demo Customer",
+        customer_email: `demo.customer+bundle-cart-${runId}@example.com`,
+        customer_phone: "6281234567890",
+        shipping_address: "Jl. Demo Storefront API No. 3",
+        shipping_city: "Kota Jakarta Pusat",
+        shipping_province: "DKI Jakarta",
+        shipping_subdistrict: "Cempaka Putih",
+        shipping_postal_code: "10510",
+        shipping_location_id: 9089,
+        payment_method: "bank_transfer"
+      })
+    })
+  );
 }
 
 await probe("Product detail", async () =>
-  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products/new-digital-agis`, {
+  fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/products/${product?.slug || "new-digital-agis"}`, {
     headers: publicHeaders()
   })
 );
@@ -198,7 +237,7 @@ await probe("Add cart item", async () =>
       "Content-Type": "application/json",
       "X-Scalev-Guest-Token": guestToken
     }),
-    body: JSON.stringify({ variant_id: 494535, quantity: 1 })
+    body: JSON.stringify({ type: "variant", variant_id: 494535, quantity: 1 })
   })
 );
 
@@ -212,7 +251,7 @@ const checkout = await probe("Guest checkout", async () =>
     body: JSON.stringify({
       items: [{ type: "variant", variant_id: 494535, quantity: 1 }],
       customer_name: "Demo Customer",
-      customer_email: "demo.customer@example.com",
+      customer_email: `demo.customer+variant-${runId}@example.com`,
       customer_phone: "6281234567890",
       shipping_address: "Jl. Demo Storefront API No. 3",
       shipping_city: "Kota Jakarta Pusat",
@@ -243,6 +282,8 @@ if (orderSecret) {
 }
 
 if (bundlePriceOption?.id) {
+  const bundlePriceOptionId = bundlePriceOption.bundle_price_option_id || bundlePriceOption.id;
+
   await probe("Bundle price option checkout", async () =>
     fetch(`${API_BASE}/v3/stores/${STORE_ID}/public/checkout`, {
       method: "POST",
@@ -253,7 +294,7 @@ if (bundlePriceOption?.id) {
         items: [
           {
             type: "bundle_price_option",
-            bundle_price_option_id: bundlePriceOption.id,
+            bundle_price_option_id: bundlePriceOptionId,
             quantity: 1
           }
         ],
@@ -287,6 +328,59 @@ function publicHeaders(extra = {}) {
     "X-Scalev-Storefront-Api-Key": storefrontKey,
     ...extra
   };
+}
+
+async function collectStorefrontItems(limit) {
+  const items = [];
+  let endpoint = `${API_BASE}/v3/stores/${STORE_ID}/public/items?page_size=12`;
+  let pageNumber = 1;
+
+  while (endpoint && items.length < limit) {
+    const response = await fetch(endpoint, {
+      headers: publicHeaders()
+    });
+    const text = await response.text();
+    let body;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+
+    results.push({
+      name: `Storefront item sample page ${pageNumber}`,
+      status: response.status,
+      ok: response.ok,
+      request_id: response.headers.get("x-request-id"),
+      allow_headers: response.headers.get("access-control-allow-headers"),
+      allow_origin: response.headers.get("access-control-allow-origin"),
+      expose_headers: response.headers.get("access-control-expose-headers"),
+      body: compactBody(body)
+    });
+
+    if (!response.ok || !Array.isArray(body?.data)) break;
+    items.push(...body.data);
+    endpoint =
+      body.has_next && body.next_cursor
+        ? `${API_BASE}/v3/stores/${STORE_ID}/public/items?next_cursor=${encodeURIComponent(
+            body.next_cursor
+          )}&page_size=12`
+        : "";
+    pageNumber += 1;
+  }
+
+  results.push({
+    name: "Storefront item sample summary",
+    status: 200,
+    ok: true,
+    body: {
+      sampled: items.length,
+      products: items.filter((item) => item.entity_type === "product").length,
+      bundle_price_options: items.filter((item) => item.entity_type === "bundle_price_option").length
+    }
+  });
+
+  return items;
 }
 
 async function probe(name, fn) {
@@ -326,6 +420,7 @@ function compactBody(body) {
   if (Array.isArray(body)) return body.slice(0, 2);
   const copy = { ...body };
   if (Array.isArray(copy.data)) {
+    copy.data_count = copy.data.length;
     copy.data = copy.data.slice(0, 2);
   }
   if (copy.items && Array.isArray(copy.items)) {

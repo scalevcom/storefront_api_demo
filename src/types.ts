@@ -41,9 +41,14 @@ export interface Product {
   id: number;
   slug: string;
   name: string;
+  entity_type?: "product" | "bundle_price_option" | string;
   description?: string | null;
   rich_description?: string | null;
   bpo_name?: string;
+  bundle_id?: number;
+  bundle_name?: string;
+  bundle_price_option_id?: number;
+  bundle_price_option_name?: string;
   price?: string;
   weight_bump?: number | null;
   meta_thumbnail?: string | null;
