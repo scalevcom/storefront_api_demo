@@ -258,7 +258,6 @@ const checkout = await probe("Guest checkout", async () =>
       shipping_province: "DKI Jakarta",
       shipping_subdistrict: "Cempaka Putih",
       shipping_postal_code: "10510",
-      location_id: 9089,
       shipping_location_id: 9089,
       payment_method: "bank_transfer"
     })

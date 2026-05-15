@@ -646,7 +646,6 @@ export default function App() {
       shipping_province: selectedLocation?.province_name,
       shipping_subdistrict: selectedLocation?.subdistrict_name,
       shipping_postal_code: checkoutForm.postalCode,
-      location_id: selectedLocation?.id,
       shipping_location_id: selectedLocation?.id,
       payment_method: checkoutForm.paymentMethod
     };
